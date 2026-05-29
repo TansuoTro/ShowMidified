@@ -41,6 +41,7 @@ interface MidiContextValue {
   setChannelFilter: (ch: number) => void
   exportJson: () => void
   exportCsv: () => void
+  saveMidi: () => void
 }
 
 const MidiContext = createContext<MidiContextValue | null>(null)
@@ -104,6 +105,12 @@ export function MidiProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const saveMidi = useCallback(() => {
+    import('../utils/exportData').then(({ saveMidi: fn }) => {
+      fn(midiEngine.allEvents)
+    })
+  }, [])
+
   const value: MidiContextValue = {
     ...engineState,
     recentEvents,
@@ -121,6 +128,7 @@ export function MidiProvider({ children }: { children: ReactNode }) {
     setChannelFilter: (ch) => midiEngine.setChannelFilter(ch),
     exportJson,
     exportCsv,
+    saveMidi,
   }
 
   return <MidiContext.Provider value={value}>{children}</MidiContext.Provider>

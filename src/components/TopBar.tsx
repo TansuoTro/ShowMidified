@@ -17,6 +17,7 @@ export function TopBar() {
     stopDemo,
     exportJson,
     exportCsv,
+    saveMidi,
   } = useMidi()
 
   const canRecord = (selectedDeviceId !== null || isDemoMode) && permission === 'granted'
@@ -136,9 +137,15 @@ export function TopBar() {
               </button>
               <button
                 onClick={exportCsv}
-                className="px-3 py-2 text-[11px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 text-left rounded-b-md"
+                className="px-3 py-2 text-[11px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 text-left"
               >
                 CSV
+              </button>
+              <button
+                onClick={saveMidi}
+                className="px-3 py-2 text-[11px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5 text-left rounded-b-md"
+              >
+                MIDI
               </button>
             </div>
           </div>

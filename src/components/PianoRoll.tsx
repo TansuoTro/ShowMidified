@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react'
 import { midiEngine } from '../core/midiEngine'
 import { PIANO_MIN, PIANO_MAX } from '../utils/noteUtils'
 
-const NOTE_RANGE = PIANO_MAX - PIANO_MIN + 1  // 88
+const NOTE_RANGE = PIANO_MAX - PIANO_MIN + 1
 const VISIBLE_SECONDS = 8
+const CHANNEL_HUES = [188, 142, 38, 355, 270, 210, 25, 300]
 
 export function PianoRoll() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -23,7 +24,6 @@ export function PianoRoll() {
       const nowMs = midiEngine.getCurrentTime()
       const windowMs = VISIBLE_SECONDS * 1000
 
-      // Background
       ctx.fillStyle = '#09090d'
       ctx.fillRect(0, 0, W, H)
 
@@ -37,7 +37,6 @@ export function PianoRoll() {
           ctx.moveTo(0, y)
           ctx.lineTo(W, y)
           ctx.stroke()
-          // Octave label
           const octave = Math.floor(note / 12) - 1
           ctx.fillStyle = 'rgba(255,255,255,0.12)'
           ctx.font = '9px IBM Plex Mono, monospace'
@@ -45,7 +44,7 @@ export function PianoRoll() {
         }
       }
 
-      // Black key rows — subtle tint
+      // Black key rows
       ctx.fillStyle = 'rgba(0,0,0,0.25)'
       for (let note = PIANO_MIN; note <= PIANO_MAX; note++) {
         const mod = note % 12
@@ -74,7 +73,6 @@ export function PianoRoll() {
 
       // Draw completed notes from eventBuffer
       const events = midiEngine.eventBuffer
-      // Build note segments: pair noteOn with noteOff
       const openNotes = new Map<string, { event: typeof events[0]; startX: number }>()
 
       for (const event of events) {
@@ -88,7 +86,7 @@ export function PianoRoll() {
         } else if (event.type === 'noteOff' && event.noteNumber !== undefined) {
           const open = openNotes.get(key)
           if (open && open.event.noteNumber !== undefined) {
-            drawNote(ctx, open.startX, x, open.event.noteNumber, open.event.channel, open.event.velocity ?? 64, rowH, H, false, dpr)
+            drawNote(ctx, open.startX, x, open.event.noteNumber, open.event.channel, open.event.velocity ?? 64, rowH, H, false, dpr, event.releaseVelocity)
             openNotes.delete(key)
           }
         }
@@ -97,7 +95,7 @@ export function PianoRoll() {
       // Draw active (still held) notes from activeNotes map
       midiEngine.activeNotes.forEach((note) => {
         const startX = timeToX(note.startTime, nowMs, W)
-        const endX = W  // extends to now (right edge)
+        const endX = W
         drawNote(ctx, startX, endX, note.noteNumber, note.channel, note.velocity, rowH, H, true, dpr)
       })
 
@@ -153,25 +151,55 @@ function drawNote(
   rowH: number,
   H: number,
   isActive = false,
-  dpr = 1
+  dpr = 1,
+  releaseVelocity?: number
 ): void {
   const y = ((PIANO_MAX - noteNumber) / NOTE_RANGE) * H
   const w = Math.max(2, x2 - x1)
-  const l = 30 + (velocity / 127) * 40
-  const color = `hsl(${[188, 142, 38, 355, 270, 210, 25, 300][channel % 8]}, 80%, ${l}%)`
   const h = Math.max(rowH * 0.8, 2)
+  const hue = CHANNEL_HUES[channel % 8]
+  const l = 30 + (velocity / 127) * 40
+  const glowIntensity = (velocity / 127) * 12 * dpr
 
-  if (isActive) {
-    ctx.shadowColor = color
-    ctx.shadowBlur = 10 * dpr
+  // Gradient fill: brighter at top, darker at bottom
+  const grad = ctx.createLinearGradient(x1, y, x1, y + h)
+  grad.addColorStop(0, `hsl(${hue}, 85%, ${Math.min(85, l + 15)}%)`)
+  grad.addColorStop(1, `hsl(${hue}, 80%, ${l}%)`)
+  ctx.fillStyle = grad
+
+  // Glow based on velocity
+  if (velocity > 30) {
+    ctx.shadowColor = `hsl(${hue}, 100%, 70%)`
+    ctx.shadowBlur = glowIntensity
   }
 
-  ctx.fillStyle = color
   ctx.beginPath()
   ctx.roundRect(x1, y + rowH * 0.1, w, h, 2)
   ctx.fill()
+  ctx.shadowBlur = 0
 
-  if (isActive) {
-    ctx.shadowBlur = 0
+  // Release velocity fade at tail (completed notes only)
+  if (!isActive && releaseVelocity !== undefined && w > 8) {
+    const fadeWidth = Math.min(w * 0.3, Math.max(4, (1 - releaseVelocity / 127) * 20))
+    const fadeStart = x2 - fadeWidth
+    if (fadeStart > x1) {
+      const fadeGrad = ctx.createLinearGradient(fadeStart, y, x2, y)
+      fadeGrad.addColorStop(0, 'rgba(0,0,0,0)')
+      fadeGrad.addColorStop(1, `rgba(0,0,0,${0.3 + (1 - releaseVelocity / 127) * 0.4})`)
+      ctx.fillStyle = fadeGrad
+      ctx.beginPath()
+      ctx.roundRect(fadeStart, y + rowH * 0.1, fadeWidth, h, 2)
+      ctx.fill()
+    }
+  }
+
+  // Bright top edge highlight for high velocity notes
+  if (velocity > 80 && w > 4) {
+    ctx.strokeStyle = `hsla(${hue}, 100%, 85%, ${(velocity / 127) * 0.4})`
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(x1, y + rowH * 0.1 + 1)
+    ctx.lineTo(x2, y + rowH * 0.1 + 1)
+    ctx.stroke()
   }
 }
